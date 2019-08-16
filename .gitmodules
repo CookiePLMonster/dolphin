@@ -2,3 +2,7 @@
 	path = Externals/Qt
 	url = https://github.com/dolphin-emu/ext-win-qt.git
 	branch = master
+[submodule "Externals/WIL"]
+	path = Externals/WIL
+	url = https://github.com/microsoft/wil.git
+	branch = master
