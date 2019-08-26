@@ -184,6 +184,11 @@ bool IsRunningInCurrentThread()
   return IsRunning() && IsCPUThread();
 }
 
+bool IsBooted()
+{
+  return s_hardware_initialized.IsSet() && !s_is_stopping.IsSet();
+}
+
 bool IsCPUThread()
 {
   return tls_is_cpu_thread;
@@ -743,7 +748,7 @@ void RequestRefreshInfo()
 static bool PauseAndLock(bool do_lock, bool unpause_on_unlock)
 {
   // WARNING: PauseAndLock is not fully threadsafe so is only valid on the Host Thread
-  if (!IsRunning())
+  if (!IsBooted())
     return true;
 
   bool was_unpaused = true;
@@ -796,7 +801,7 @@ void RunAsCPUThread(std::function<void()> function)
 void RunOnCPUThread(std::function<void()> function, bool wait_for_completion)
 {
   // If the CPU thread is not running, assume there is no active CPU thread we can race against.
-  if (!IsRunning() || IsCPUThread())
+  if (!IsBooted() || IsCPUThread())
   {
     function();
     return;
