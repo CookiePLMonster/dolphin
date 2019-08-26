@@ -92,9 +92,9 @@ static Common::Timer s_timer;
 static std::atomic<u32> s_drawn_frame;
 static std::atomic<u32> s_drawn_video;
 
-static bool s_is_stopping = false;
-static bool s_hardware_initialized = false;
-static bool s_is_started = false;
+static Common::Flag s_is_stopping;
+static Common::Flag s_hardware_initialized;
+static Common::Flag s_is_started;
 static Common::Flag s_is_booting;
 static Common::Event s_done_booting;
 static std::thread s_emu_thread;
@@ -170,12 +170,13 @@ void DisplayMessage(std::string message, int time_in_ms)
 
 bool IsRunning()
 {
-  return (GetState() != State::Uninitialized || s_hardware_initialized) && !s_is_stopping;
+  return (GetState() != State::Uninitialized || s_hardware_initialized.IsSet()) &&
+         !s_is_stopping.IsSet();
 }
 
 bool IsRunningAndStarted()
 {
-  return s_is_started && !s_is_stopping;
+  return s_is_started.IsSet() && !s_is_stopping.IsSet();
 }
 
 bool IsRunningInCurrentThread()
@@ -261,7 +262,7 @@ void Stop()  // - Hammertime!
 
   const SConfig& _CoreParameter = SConfig::GetInstance();
 
-  s_is_stopping = true;
+  s_is_stopping.Set();
 
   // Notify state changed callback
   if (s_on_state_changed_callback)
@@ -340,7 +341,7 @@ static void CpuThread(const std::optional<std::string>& savestate_path, bool del
       File::Delete(*savestate_path);
   }
 
-  s_is_started = true;
+  s_is_started.Set();
   CPUSetInitialExecutionState();
 
 #ifdef USE_GDBSTUB
@@ -367,7 +368,7 @@ static void CpuThread(const std::optional<std::string>& savestate_path, bool del
   s_memory_watcher.reset();
 #endif
 
-  s_is_started = false;
+  s_is_started.Clear();
 
   if (_CoreParameter.bFastmem)
     EMM::UninstallExceptionHandler();
@@ -388,12 +389,12 @@ static void FifoPlayerThread(const std::optional<std::string>& savestate_path,
   if (auto cpu_core = FifoPlayer::GetInstance().GetCPUCore())
   {
     PowerPC::InjectExternalCPUCore(cpu_core.get());
-    s_is_started = true;
+    s_is_started.Set();
 
     CPUSetInitialExecutionState();
     CPU::Run();
 
-    s_is_started = false;
+    s_is_started.Clear();
     PowerPC::InjectExternalCPUCore(nullptr);
     FifoPlayer::GetInstance().Close();
   }
@@ -417,8 +418,8 @@ static void EmuThread(std::unique_ptr<BootParameters> boot, WindowSystemInfo wsi
   Common::ScopeGuard flag_guard{[] {
     s_is_booting.Clear();
     s_done_booting.Set();
-    s_is_started = false;
-    s_is_stopping = false;
+    s_is_started.Clear();
+    s_is_stopping.Clear();
     s_wants_determinism = false;
 
     if (s_on_state_changed_callback)
@@ -440,7 +441,7 @@ static void EmuThread(std::unique_ptr<BootParameters> boot, WindowSystemInfo wsi
 
   Common::ScopeGuard hw_guard{[] {
     // We must set up this flag before executing HW::Shutdown()
-    s_hardware_initialized = false;
+    s_hardware_initialized.Clear();
     INFO_LOG(CONSOLE, "%s", StopMessage(false, "Shutting down HW").c_str());
     HW::Shutdown();
     INFO_LOG(CONSOLE, "%s", StopMessage(false, "HW shutdown").c_str());
@@ -542,7 +543,7 @@ static void EmuThread(std::unique_ptr<BootParameters> boot, WindowSystemInfo wsi
   Common::ScopeGuard audio_guard{AudioCommon::ShutdownSoundStream};
 
   // The hardware is initialized.
-  s_hardware_initialized = true;
+  s_hardware_initialized.Set();
   s_is_booting.Clear();
   s_done_booting.Set();
 
@@ -651,10 +652,10 @@ void SetState(State state)
 
 State GetState()
 {
-  if (s_is_stopping)
+  if (s_is_stopping.IsSet())
     return State::Stopping;
 
-  if (s_hardware_initialized)
+  if (s_hardware_initialized.IsSet())
   {
     if (CPU::IsStepping() || s_frame_step)
       return State::Paused;
@@ -670,7 +671,7 @@ State GetState()
 
 void WaitUntilDoneBooting()
 {
-  if (s_is_booting.IsSet() || !s_hardware_initialized)
+  if (s_is_booting.IsSet() || !s_hardware_initialized.IsSet())
     s_done_booting.Wait();
 }
 
