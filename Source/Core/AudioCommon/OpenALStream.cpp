@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <climits>
 #include <cstring>
+#include <optional>
 #include <thread>
 
 #include "AudioCommon/OpenALStream.h"
@@ -14,8 +15,6 @@
 #include "Common/MsgHandler.h"
 #include "Common/Thread.h"
 #include "Core/ConfigManager.h"
-
-static HMODULE s_openal_dll = nullptr;
 
 #define OPENAL_API_VISIT(X)                                                                        \
   X(alBufferData)                                                                                  \
@@ -51,7 +50,7 @@ static HMODULE s_openal_dll = nullptr;
 
 // Attempt to load the function from the given module handle.
 #define OPENAL_FUNC_LOAD(func)                                                                     \
-  p##func = (func##_t)::GetProcAddress(s_openal_dll, #func);                                       \
+  p##func = (func##_t)::GetProcAddress(openal_dll, #func);                                         \
   if (!p##func)                                                                                    \
   {                                                                                                \
     return false;                                                                                  \
@@ -59,34 +58,28 @@ static HMODULE s_openal_dll = nullptr;
 
 OPENAL_API_VISIT(DYN_FUNC_DECLARE);
 
-static bool InitFunctions()
+static bool InitFunctions(HMODULE openal_dll)
 {
   OPENAL_API_VISIT(OPENAL_FUNC_LOAD);
   return true;
 }
 
-static bool InitLibrary()
+static std::optional<wil::unique_hmodule> InitLibrary()
 {
-  if (s_openal_dll)
-    return true;
+  wil::unique_hmodule openal_dll(::LoadLibrary(TEXT("openal32.dll")));
 
-  s_openal_dll = ::LoadLibrary(TEXT("openal32.dll"));
-  if (!s_openal_dll)
-    return false;
+  if (!openal_dll)
+    return std::nullopt;
 
-  if (!InitFunctions())
-  {
-    ::FreeLibrary(s_openal_dll);
-    s_openal_dll = nullptr;
-    return false;
-  }
+  if (!InitFunctions(openal_dll.get()))
+    return std::nullopt;
 
-  return true;
+  return openal_dll;
 }
 
 bool OpenALStream::isValid()
 {
-  return InitLibrary();
+  return InitLibrary().has_value();
 }
 
 //
@@ -94,6 +87,15 @@ bool OpenALStream::isValid()
 //
 bool OpenALStream::Init()
 {
+  auto openal_module = InitLibrary();
+  if (!openal_module.has_value())
+  {
+    PanicAlertT("OpenAL: failed to initialize");
+    return false;
+  }
+
+  m_oal_dll = std::move(*openal_module);
+
   if (!palcIsExtensionPresent(nullptr, "ALC_ENUMERATION_EXT"))
   {
     PanicAlertT("OpenAL: can't find sound devices");

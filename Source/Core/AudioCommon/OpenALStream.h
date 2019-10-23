@@ -17,6 +17,8 @@
 #include <OpenAL/include/alc.h>
 #include <OpenAL/include/alext.h>
 
+#include <wil/resource.h>
+
 // OpenAL requires a minimum of two buffers, three or more recommended
 #define OAL_BUFFERS 3
 #define OAL_MAX_FRAMES 4096
@@ -65,6 +67,8 @@ public:
   static bool isValid();
 
 private:
+  wil::unique_hmodule m_oal_dll;
+
   std::thread m_thread;
   Common::Flag m_run_thread;
 

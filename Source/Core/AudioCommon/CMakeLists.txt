@@ -71,6 +71,11 @@ if(WIN32)
 
     WASAPIStream.cpp
     WASAPIStream.h
+  target_include_directories(audiocommon PRIVATE
+    ${PROJECT_SOURCE_DIR}/Externals/WIL/include
+  )
+  target_compile_definitions(audiocommon PRIVATE WIL_SUPPRESS_EXCEPTIONS)
+
   )
 endif()
 
